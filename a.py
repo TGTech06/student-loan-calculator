@@ -18,6 +18,22 @@ st.markdown("""
         font-weight: 600;
         margin-top: 15px;
     }
+    /* Only set fixed height when the screen is wide */
+    @media (min-width: 600px) {
+        .remove-button-container {
+            display: flex;
+            align-items: flex-end;
+            height: 28px;
+        }
+    }
+    /* On smaller screens, let the height adjust automatically */
+    @media (max-width: 640px) {
+        .remove-button-container {
+            display: flex;
+            align-items: flex-end;
+            height: auto;
+        }
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -70,7 +86,9 @@ for i, row in enumerate(st.session_state.salary_rows):
             key=f"years_{i}"
         )
     with cols[2]:
+        st.markdown("<div class='remove-button-container'>", unsafe_allow_html=True)
         st.button("Remove", key=f"remove_salary_{i}", on_click=remove_salary_row, args=(i,))
+        st.markdown("</div>", unsafe_allow_html=True)
 st.button("Add Salary Row", on_click=add_salary_row)
 salary_df = pd.DataFrame(st.session_state.salary_rows)
 
@@ -107,7 +125,9 @@ for i, row in enumerate(st.session_state.inflation_rows):
             key=f"inflation_years_{i}"
         )
     with cols[2]:
+        st.markdown("<div class='remove-button-container'>", unsafe_allow_html=True)
         st.button("Remove", key=f"remove_inflation_{i}", on_click=remove_inflation_row, args=(i,))
+        st.markdown("</div>", unsafe_allow_html=True)
 st.button("Add Inflation Row", on_click=add_inflation_row)
 inflation_df = pd.DataFrame(st.session_state.inflation_rows)
 
@@ -268,7 +288,7 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
 # -------------------------
 if st.button("Run Simulation"):
     starting_loan = (tuition_loan + maintenance_loan) * study_years
-    # Display key metrics using default Streamlit styles (st.metric, st.success/st.error)
+    # Display key metrics using default Streamlit styles
     colA, colB = st.columns(2)
     with colA:
          st.metric("Starting Loan", f"£{starting_loan:,.2f}")
