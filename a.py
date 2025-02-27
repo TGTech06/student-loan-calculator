@@ -4,20 +4,19 @@ import numpy as np
 from datetime import datetime
 
 # -------------------------
-# Custom CSS for overall styling
+# (Optional) Minimal Custom CSS for minor spacing adjustments
 # -------------------------
 st.markdown("""
     <style>
     .header {
         text-align: center;
+        font-size: 1.75rem;
         color: #333;
     }
-    .summary-box {
-        border: 2px solid #2196F3;
-        border-radius: 8px;
-        padding: 12px;
-        background-color: #e3f2fd;
-        margin-bottom: 20px;
+    .section-header {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-top: 15px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -26,7 +25,7 @@ st.markdown("""
 # App Title
 # -------------------------
 st.title("UK Student Loan Repayment Simulator")
-st.markdown("<h3 class='header'>Calculate your repayment details over 40 years</h3>", unsafe_allow_html=True)
+st.markdown("##### Calculate your repayment over 40 years")
 
 # -------------------------
 # Student Loan Details Inputs
@@ -72,9 +71,7 @@ for i, row in enumerate(st.session_state.salary_rows):
         )
     with cols[2]:
         st.button("Remove", key=f"remove_salary_{i}", on_click=remove_salary_row, args=(i,))
-
 st.button("Add Salary Row", on_click=add_salary_row)
-
 salary_df = pd.DataFrame(st.session_state.salary_rows)
 
 # -------------------------
@@ -111,16 +108,13 @@ for i, row in enumerate(st.session_state.inflation_rows):
         )
     with cols[2]:
         st.button("Remove", key=f"remove_inflation_{i}", on_click=remove_inflation_row, args=(i,))
-
 st.button("Add Inflation Row", on_click=add_inflation_row)
-
 inflation_df = pd.DataFrame(st.session_state.inflation_rows)
 
 # -------------------------
 # Other Repayment Details & Constants
 # -------------------------
-# UK Plan 2 repayment threshold (annual)
-repayment_threshold = 27295  
+repayment_threshold = 27295  # UK Plan 2 annual threshold
 
 # -------------------------
 # Simulation Function
@@ -202,7 +196,7 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
     cumulative_paid_list = []
     interest_list = []
     bracket_list = []
-    min_salary_list = []  # New list for dynamic minimum salary
+    min_salary_list = []  # Dynamic minimum salary list
     
     start_date = pd.to_datetime("2030-01-01")
     loan_repaid_month = None
@@ -226,7 +220,7 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
         balance -= payment
         cumulative_paid += payment
 
-        # Calculate dynamic minimum salary required to avoid repaying (i.e. just cover interest)
+        # Calculate dynamic minimum salary required to just cover interest.
         min_salary = repayment_threshold + (balance * current_monthly_inflation * 12) / 0.09
         
         months_list.append(month + 1)
@@ -252,7 +246,7 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
                 cumulative_paid_list.append(cumulative_paid)
                 interest_list.append(0.0)
                 bracket_list.append(bracket_indices[extra_month])
-                min_salary_list.append(repayment_threshold)  # if fully repaid, min salary equals threshold
+                min_salary_list.append(repayment_threshold)
             break
 
     sim_df = pd.DataFrame({
@@ -270,99 +264,101 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
     return sim_df, bracket_details, loan_repaid_month
 
 # -------------------------
-# Run Simulation Button
+# Run Simulation Button and Simulation Summary
 # -------------------------
 if st.button("Run Simulation"):
     starting_loan = (tuition_loan + maintenance_loan) * study_years
-    st.markdown(f"<div class='summary-box'><h3>Starting Loan Amount: £{starting_loan:,.2f}</h3></div>", unsafe_allow_html=True)
-    
-    # Calculate initial minimum salary using the first inflation rate.
+    # Display key metrics using default Streamlit styles (st.metric, st.success/st.error)
+    colA, colB = st.columns(2)
+    with colA:
+         st.metric("Starting Loan", f"£{starting_loan:,.2f}")
     try:
-        first_inflation = float(inflation_df.iloc[0]["inflation"])
+         first_inflation = float(inflation_df.iloc[0]["inflation"])
     except Exception:
-        first_inflation = 2.0
+         first_inflation = 2.0
     first_monthly_inflation = (first_inflation / 100) / 12
     initial_min_salary = repayment_threshold + (starting_loan * first_monthly_inflation * 12) / 0.09
-    st.markdown(f"<div class='summary-box'><h3>Minimum Salary to avoid loan growing at start: £{initial_min_salary:,.2f} per year</h3></div>", unsafe_allow_html=True)
+    with colB:
+         st.metric("Initial Minimum Salary to avoid loan growing", f"£{initial_min_salary:,.2f}")
     
     result = simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40)
     if result[0] is None:
-        st.error("Simulation failed due to input errors.")
+         st.error("Simulation failed due to input errors.")
     else:
-        sim_df, bracket_details, loan_repaid_month = result
-        
-        st.markdown("### Simulation Summary")
-        if loan_repaid_month:
-            years = loan_repaid_month // 12
-            rem_months = loan_repaid_month % 12
-            st.markdown(f"<div class='summary-box'><strong>Loan fully repaid in {loan_repaid_month} months ({years} years and {rem_months} months).</strong></div>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div class='summary-box'><strong>Loan not fully repaid within 40 years.</strong></div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='summary-box'><strong>Outstanding Balance after 40 years: £{sim_df['Loan Balance'].iloc[-1]:,.2f}</strong></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='summary-box'><strong>Total Amount Repaid: £{sim_df['Cumulative Paid'].iloc[-1]:,.2f}</strong></div>", unsafe_allow_html=True)
-        
-        # -------------------------
-        # Graphs (Rounded Values)
-        # -------------------------
-        sim_df_graph = sim_df.copy()
-        sim_df_graph["Loan Balance"] = sim_df_graph["Loan Balance"].round(2)
-        sim_df_graph["Monthly Payment"] = sim_df_graph["Monthly Payment"].round(2)
-        sim_df_graph["Min Salary"] = sim_df_graph["Min Salary"].round(2)
-        sim_df_graph = sim_df_graph.set_index("Date")
-        
-        st.markdown("### Loan Balance Over Time")
-        st.line_chart(sim_df_graph[["Loan Balance"]])
-        st.markdown("### Monthly Payment Over Time")
-        st.line_chart(sim_df_graph[["Monthly Payment"]])
-        st.markdown("### Minimum Salary Required to avoid loan growing Over Time")
-        st.line_chart(sim_df_graph[["Min Salary"]])
-        
-        # -------------------------
-        # Salary Bracket Detailed Summary
-        # -------------------------
-        summary_data = {
-            "Salary (Annual, £)": [],
-            "Years in Bracket": [],
-            "Monthly Payment (£)": [],
-            "Annual Payment (£)": [],
-            "Weekly Payment (£)": [],
-            "Total Payment in Bracket (£)": [],
-            "Total Interest Accrued (£)": [],
-            "Avg Loan Growth per Month (£)": [],
-            "Avg Min Salary (£)": []
-        }
-        
-        start_idx = 0
-        for i, (sal, months_in_bracket) in enumerate(bracket_details):
-            end_idx = start_idx + months_in_bracket
-            df_bracket = sim_df[(sim_df["Month"] > start_idx) & (sim_df["Month"] <= end_idx)]
-            if sal > repayment_threshold:
-                m_payment = ((sal - repayment_threshold) * 0.09) / 12
-            else:
-                m_payment = 0.0
-            annual_payment = m_payment * 12
-            weekly_payment = annual_payment / 52
-            total_payment = df_bracket["Monthly Payment"].sum()
-            total_interest = df_bracket["Interest Accrued"].sum()
-            avg_growth = total_interest / len(df_bracket) if len(df_bracket) > 0 else 0
-            avg_min_salary = df_bracket["Min Salary"].mean() if len(df_bracket) > 0 else 0
-            
-            summary_data["Salary (Annual, £)"].append(f"£{sal:,.0f}")
-            years_in_bracket = len(df_bracket) / 12
-            summary_data["Years in Bracket"].append(round(years_in_bracket, 2))
-            summary_data["Monthly Payment (£)"].append(round(m_payment, 2))
-            summary_data["Annual Payment (£)"].append(round(annual_payment, 2))
-            summary_data["Weekly Payment (£)"].append(round(weekly_payment, 2))
-            summary_data["Total Payment in Bracket (£)"].append(round(total_payment, 2))
-            summary_data["Total Interest Accrued (£)"].append(round(total_interest, 2))
-            summary_data["Avg Loan Growth per Month (£)"].append(round(avg_growth, 2))
-            summary_data["Avg Min Salary (£)"].append(round(avg_min_salary, 2))
-            
-            start_idx = end_idx
-        
-        summary_df = pd.DataFrame(summary_data)
-        st.markdown("### Salary Bracket Summary")
-        st.dataframe(summary_df)
-        
-        st.markdown("### Month-by-Month Repayment Details")
-        st.dataframe(sim_df.round(2))
+         sim_df, bracket_details, loan_repaid_month = result
+         st.markdown("### Simulation Summary")
+         if loan_repaid_month:
+             years = loan_repaid_month // 12
+             rem_months = loan_repaid_month % 12
+             st.success(f"### Loan fully repaid in {years} years, {rem_months} months.")
+         else:
+             st.error(f"##### Loan not fully repaid within 40 years. \n ### Outstanding Balance: £{sim_df['Loan Balance'].iloc[-1]:,.2f}")
+         st.metric("Total Amount Repaid", f"£{sim_df['Cumulative Paid'].iloc[-1]:,.2f}")
+         
+         # -------------------------
+         # Graphs (using default Streamlit styles)
+         # -------------------------
+         sim_df_graph = sim_df.copy()
+         sim_df_graph["Loan Balance"] = sim_df_graph["Loan Balance"].round(2)
+         sim_df_graph["Monthly Payment"] = sim_df_graph["Monthly Payment"].round(2)
+         sim_df_graph["Min Salary"] = sim_df_graph["Min Salary"].round(2)
+         sim_df_graph = sim_df_graph.set_index("Date")
+         
+         st.markdown("#### Loan Balance Over Time")
+         st.line_chart(sim_df_graph[["Loan Balance"]])
+         
+         st.markdown("#### Monthly Payment Over Time")
+         st.line_chart(sim_df_graph[["Monthly Payment"]])
+         
+         st.markdown("#### Minimum Salary (to avoid loan growing) Over Time")
+         st.line_chart(sim_df_graph[["Min Salary"]])
+         
+         # -------------------------
+         # Detailed Salary Bracket Summary
+         # -------------------------
+         summary_data = {
+             "Salary (Annual, £)": [],
+             "Years in Bracket": [],
+             "Monthly Payment (£)": [],
+             "Annual Payment (£)": [],
+             "Weekly Payment (£)": [],
+             "Total Payment in Bracket (£)": [],
+             "Total Interest Accrued (£)": [],
+             "Avg Loan Growth per Month (£)": [],
+             "Avg Min Salary (£)": []
+         }
+         
+         start_idx = 0
+         for i, (sal, months_in_bracket) in enumerate(bracket_details):
+             end_idx = start_idx + months_in_bracket
+             df_bracket = sim_df[(sim_df["Month"] > start_idx) & (sim_df["Month"] <= end_idx)]
+             if sal > repayment_threshold:
+                 m_payment = ((sal - repayment_threshold) * 0.09) / 12
+             else:
+                 m_payment = 0.0
+             annual_payment = m_payment * 12
+             weekly_payment = annual_payment / 52
+             total_payment = df_bracket["Monthly Payment"].sum()
+             total_interest = df_bracket["Interest Accrued"].sum()
+             avg_growth = total_interest / len(df_bracket) if len(df_bracket) > 0 else 0
+             avg_min_salary = df_bracket["Min Salary"].mean() if len(df_bracket) > 0 else 0
+             
+             summary_data["Salary (Annual, £)"].append(f"£{sal:,.0f}")
+             years_in_bracket = len(df_bracket) / 12
+             summary_data["Years in Bracket"].append(round(years_in_bracket, 2))
+             summary_data["Monthly Payment (£)"].append(round(m_payment, 2))
+             summary_data["Annual Payment (£)"].append(round(annual_payment, 2))
+             summary_data["Weekly Payment (£)"].append(round(weekly_payment, 2))
+             summary_data["Total Payment in Bracket (£)"].append(round(total_payment, 2))
+             summary_data["Total Interest Accrued (£)"].append(round(total_interest, 2))
+             summary_data["Avg Loan Growth per Month (£)"].append(round(avg_growth, 2))
+             summary_data["Avg Min Salary (£)"].append(round(avg_min_salary, 2))
+             
+             start_idx = end_idx
+         
+         summary_df = pd.DataFrame(summary_data)
+         st.markdown("#### Salary Bracket Summary")
+         st.dataframe(summary_df)
+         
+         st.markdown("#### Month-by-Month Repayment Details")
+         st.dataframe(sim_df.round(2))
