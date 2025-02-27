@@ -96,11 +96,12 @@ salary_df = pd.DataFrame(st.session_state.salary_rows)
 # Dynamic Inflation Timeline Inputs
 # -------------------------
 st.markdown("### Inflation Timeline")
-st.markdown("Enter the annual inflation rate (%) and the number of years that rate applies. For the final row, leave 'Years' blank to continue until the end of the simulation.")
+st.markdown("Enter the estimated annual inflation rate and the number of years that rate applies. For the final row, leave 'Years' blank to continue until the end of the simulation. Interest rates on student loans are usually tied to the retail price index (RPI) or the Bank of England base rate.")
 
 if "inflation_rows" not in st.session_state:
     st.session_state.inflation_rows = [
-        {"inflation": 2.0, "years": "40"}
+        {"inflation": 4.3, "years": "10"},
+         {"inflation": 5, "years": "30"}
     ]
 
 def add_inflation_row():
