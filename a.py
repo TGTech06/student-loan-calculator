@@ -63,7 +63,7 @@ Always verify with an official source such as the UK Government website [https:/
 st.markdown("### Student Loan Details")
 tuition_loan = st.number_input(
     "Tuition Loan Amount (£ per year)", 
-    value=9550.0, 
+    value=9535.0, 
     step=100.0,
     format="%.2f"
 )
@@ -89,7 +89,7 @@ if "salary_rows" not in st.session_state:
     st.session_state.salary_rows = [
         {"salary": 30000.0, "years": 5},
         {"salary": 40000.0, "years": 10},
-        {"salary": 50000.0, "years": 0}  # 0 means indefinite
+        {"salary": 60000.0, "years": 0}  # 0 means indefinite
     ]
 
 def add_salary_row():
@@ -171,12 +171,66 @@ st.button("Add Inflation Row", on_click=add_inflation_row)
 inflation_df = pd.DataFrame(st.session_state.inflation_rows)
 
 # -------------------------
+# Dynamic Extra Repayment Timeline Inputs
+# -------------------------
+st.markdown("### Extra Repayments")
+st.markdown("""
+Enter the extra repayment amount you can contribute (per month), the start year (relative to your repayment start date), and the duration in years.  
+For the final row, enter **0** in "Duration (years)" to continue until the end of the simulation.
+""")
+
+if "extra_repayment_rows" not in st.session_state:
+    st.session_state.extra_repayment_rows = [
+        {"extra_payment": 0.0, "start_year": 1, "duration": 0}
+    ]
+
+def add_extra_row():
+    st.session_state.extra_repayment_rows.append({"extra_payment": 0.0, "start_year": 1, "duration": 0})
+
+def remove_extra_row(index):
+    if len(st.session_state.extra_repayment_rows) > 1:
+        st.session_state.extra_repayment_rows.pop(index)
+
+for i, row in enumerate(st.session_state.extra_repayment_rows):
+    cols = st.columns([3, 3, 3, 1])
+    with cols[0]:
+        st.session_state.extra_repayment_rows[i]["extra_payment"] = st.number_input(
+            label=f"Extra Payment (£ per month) (Row {i+1})",
+            value=st.session_state.extra_repayment_rows[i]["extra_payment"],
+            key=f"extra_payment_{i}",
+            format="%.2f",
+            step=50.0
+        )
+    with cols[1]:
+        st.session_state.extra_repayment_rows[i]["start_year"] = st.number_input(
+            label=f"Start Year (Row {i+1})\n(Relative to repayment start)",
+            value=st.session_state.extra_repayment_rows[i]["start_year"],
+            key=f"extra_start_year_{i}",
+            step=1,
+            format="%d"
+        )
+    with cols[2]:
+        st.session_state.extra_repayment_rows[i]["duration"] = st.number_input(
+            label=f"Duration in Years (Row {i+1})\n(Enter 0 for indefinite)",
+            value=st.session_state.extra_repayment_rows[i]["duration"],
+            key=f"extra_duration_{i}",
+            step=1,
+            format="%d"
+        )
+    with cols[3]:
+        st.markdown("<div class='remove-button-container'>", unsafe_allow_html=True)
+        st.button("Remove", key=f"remove_extra_{i}", on_click=remove_extra_row, args=(i,))
+        st.markdown("</div>", unsafe_allow_html=True)
+st.button("Add Extra Repayment Row", on_click=add_extra_row)
+extra_df = pd.DataFrame(st.session_state.extra_repayment_rows)
+
+# -------------------------
 # Other Repayment Details & Constants
 # -------------------------
 repayment_threshold = 27295  # UK Plan 2 annual threshold
 
 # -------------------------
-# Simulation Function
+# Simulation Function with Extra Repayments
 # -------------------------
 def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
     total_months = total_years * 12  # 40 years
@@ -242,38 +296,76 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
         extra_months = total_months - inflation_assigned
         month_inflation_schedule.extend([last_inf] * extra_months)
     
+    # Build month-by-month extra repayment schedule.
+    # Each extra repayment row applies extra payment from its specified start year for the given duration.
+    extra_repayment_schedule = [0.0] * total_months
+    if "extra_repayment_rows" in st.session_state:
+        for row in st.session_state.extra_repayment_rows:
+            try:
+                extra_amount = float(row["extra_payment"])
+            except Exception:
+                extra_amount = 0.0
+            start_year_offset = int(row["start_year"]) - 1  # Year 1 starts at month 0
+            duration_years = int(row["duration"])
+            if duration_years == 0:
+                months_active = total_months - start_year_offset
+            else:
+                months_active = duration_years * 12
+            for m in range(start_year_offset, min(start_year_offset + months_active, total_months)):
+                extra_repayment_schedule[m] += extra_amount
+    
     # -------------------------
     # Simulation Loop
     # -------------------------
-    loan_repaid_month = None  # Ensure variable is defined
+    loan_repaid_month = None  # Month when loan is fully repaid
     balance = starting_loan
     cumulative_paid = 0.0
 
     months_list = []
     dates_list = []
     salary_list = []
-    payment_list = []
+    regular_payment_list = []
+    extra_payment_list = []
+    total_payment_list = []
     balance_list = []
     cumulative_paid_list = []
     interest_list = []
     bracket_list = []
-    min_salary_list = []  # We'll update this label below
+    min_salary_list = []  # Minimum salary required to cover interest
 
     for month in range(total_months):
         current_salary = month_salary_schedule[month]
         current_inf = month_inflation_schedule[month]
         current_monthly_inflation = (current_inf / 100) / 12
 
+        # Regular monthly payment from salary (if above threshold)
         if current_salary > repayment_threshold:
-            monthly_payment = ((current_salary - repayment_threshold) * 0.09) / 12
+            regular_payment = ((current_salary - repayment_threshold) * 0.09) / 12
         else:
-            monthly_payment = 0.0
+            regular_payment = 0.0
 
+        # Extra payment from extra repayments schedule
+        extra_payment = extra_repayment_schedule[month]
+
+        # Total scheduled payment before capping by remaining balance
+        scheduled_payment = regular_payment + extra_payment
+
+        # Accrue interest first
         interest = balance * current_monthly_inflation
         balance += interest
-        payment = monthly_payment if monthly_payment < balance else balance
-        balance -= payment
-        cumulative_paid += payment
+
+        # Cap payment if it exceeds remaining balance
+        if scheduled_payment > balance:
+            # Apply regular payment first, then extra repayment as possible.
+            if regular_payment >= balance:
+                regular_payment = balance
+                extra_payment = 0.0
+            else:
+                extra_payment = balance - regular_payment
+            scheduled_payment = balance
+
+        balance -= scheduled_payment
+        cumulative_paid += scheduled_payment
 
         # Calculate the minimum salary required to cover a year's worth of interest at this balance.
         min_salary = repayment_threshold + (balance * current_monthly_inflation * 12) / 0.09
@@ -282,7 +374,9 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
         current_date = start_date + pd.DateOffset(months=month)
         dates_list.append(current_date)
         salary_list.append(current_salary)
-        payment_list.append(payment)
+        regular_payment_list.append(regular_payment)
+        extra_payment_list.append(extra_payment)
+        total_payment_list.append(scheduled_payment)
         balance_list.append(balance)
         cumulative_paid_list.append(cumulative_paid)
         interest_list.append(interest)
@@ -291,12 +385,15 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
 
         if balance <= 0:
             loan_repaid_month = month + 1
+            # Fill in remaining months with zeros if loan is repaid early.
             for extra_month in range(month+1, total_months):
                 months_list.append(extra_month+1)
                 current_date = start_date + pd.DateOffset(months=extra_month)
                 dates_list.append(current_date)
                 salary_list.append(month_salary_schedule[extra_month])
-                payment_list.append(0.0)
+                regular_payment_list.append(0.0)
+                extra_payment_list.append(0.0)
+                total_payment_list.append(0.0)
                 balance_list.append(0.0)
                 cumulative_paid_list.append(cumulative_paid)
                 interest_list.append(0.0)
@@ -308,7 +405,9 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
         "Month": months_list,
         "Date": dates_list,
         "Salary": salary_list,
-        "Monthly Payment": payment_list,
+        "Regular Payment": regular_payment_list,
+        "Extra Payment": extra_payment_list,
+        "Total Payment": total_payment_list,
         "Interest Accrued": interest_list,
         "Cumulative Paid": cumulative_paid_list,
         "Loan Balance": balance_list,
@@ -344,9 +443,9 @@ if st.button("Run Simulation"):
         if loan_repaid_month:
             years = loan_repaid_month // 12
             rem_months = loan_repaid_month % 12
-            st.success(f"### Loan fully repaid in {years} years, {rem_months} months.")
+            st.success(f"Loan fully repaid in {years} years, {rem_months} months.")
         else:
-            st.error(f"##### Loan not fully repaid within 40 years. \n ### Outstanding Balance: £{sim_df['Loan Balance'].iloc[-1]:,.2f}")
+            st.error(f"Loan not fully repaid within 40 years. \nOutstanding Balance: £{sim_df['Loan Balance'].iloc[-1]:,.2f}")
         
         total_repaid = sim_df['Cumulative Paid'].iloc[-1]
         total_months = 40 * 12
@@ -368,7 +467,7 @@ if st.button("Run Simulation"):
             labels = ["Original Loan", "Interest Paid"]
             interest_paid = total_repaid - starting_loan
             values = [starting_loan, interest_paid]
-            title = "Breakdown of Total Repayments Made: Original Loan Paid vs Interest Paid"
+            title = "Breakdown of Total Repayments: Original Loan vs Interest"
             color_sequence = ["forestgreen", "darkorange"]
         else:
             labels = ["Amount Repaid", "Outstanding Balance"]
@@ -376,7 +475,6 @@ if st.button("Run Simulation"):
             title = "Repaid vs Outstanding Balance"
             color_sequence = ["crimson", "royalblue"]
 
-        # Round values to 2 decimal places
         values = [round(v, 2) for v in values]
         pie_fig = px.pie(
             names=labels,
@@ -391,11 +489,11 @@ if st.button("Run Simulation"):
         )
         st.plotly_chart(pie_fig, use_container_width=True)
 
-        # If not fully repaid and total repaid > starting loan, display a second pie chart for repayment breakdown.
+        # Additional pie chart if not fully repaid and total repaid > starting loan.
         if loan_repaid_month is None and total_repaid > starting_loan:
             labels2 = ["Original Loan", "Interest Paid"]
             values2 = [starting_loan, total_repaid - starting_loan]
-            title2 = "Breakdown of Total Repayments Made: Original Loan Paid vs Interest Paid"
+            title2 = "Breakdown: Original Loan vs Interest Paid"
             color_sequence2 = ["forestgreen", "darkorange"]
             values2 = [round(v, 2) for v in values2]
             pie_fig2 = px.pie(
@@ -411,20 +509,19 @@ if st.button("Run Simulation"):
             )
             st.plotly_chart(pie_fig2, use_container_width=True)
 
-        
         # -------------------------
-        # Line Charts using Streamlit's st.line_chart (old graphs)
+        # Line Charts using Streamlit's st.line_chart
         # -------------------------
         sim_df_graph = sim_df.copy()
         sim_df_graph["Loan Balance"] = sim_df_graph["Loan Balance"].round(2)
-        sim_df_graph["Monthly Payment"] = sim_df_graph["Monthly Payment"].round(2)
+        sim_df_graph["Total Payment"] = sim_df_graph["Total Payment"].round(2)
         sim_df_graph["Minimum Salary (to Offset Interest)"] = sim_df_graph["Minimum Salary (to Offset Interest)"].round(2)
         sim_df_graph = sim_df_graph.set_index("Date")
         
         st.markdown("#### Loan Balance Over Time")
         st.line_chart(sim_df_graph[["Loan Balance"]])
-        st.markdown("#### Monthly Payment Over Time")
-        st.line_chart(sim_df_graph[["Monthly Payment"]]) 
+        st.markdown("#### Total Monthly Payment Over Time")
+        st.line_chart(sim_df_graph[["Total Payment"]])
         st.markdown("#### Minimum Salary to Offset Interest Over Time")
         st.line_chart(sim_df_graph[["Minimum Salary (to Offset Interest)"]])
         
@@ -453,7 +550,7 @@ if st.button("Run Simulation"):
                 m_payment = 0.0
             annual_payment = m_payment * 12
             weekly_payment = annual_payment / 52
-            total_payment = df_bracket["Monthly Payment"].sum()
+            total_payment_bracket = df_bracket["Total Payment"].sum()
             total_interest = df_bracket["Interest Accrued"].sum()
             avg_growth = total_interest / len(df_bracket) if len(df_bracket) > 0 else 0
             avg_min_salary = df_bracket["Minimum Salary (to Offset Interest)"].mean() if len(df_bracket) > 0 else 0
@@ -464,7 +561,7 @@ if st.button("Run Simulation"):
             summary_data["Monthly Payment (£)"].append(round(m_payment, 2))
             summary_data["Annual Payment (£)"].append(round(annual_payment, 2))
             summary_data["Weekly Payment (£)"].append(round(weekly_payment, 2))
-            summary_data["Total Payment in Bracket (£)"].append(round(total_payment, 2))
+            summary_data["Total Payment in Bracket (£)"].append(round(total_payment_bracket, 2))
             summary_data["Total Interest Accrued (£)"].append(round(total_interest, 2))
             summary_data["Avg Loan Growth per Month (£)"].append(round(avg_growth, 2))
             summary_data["Avg Minimum Salary (to Offset Interest)"].append(round(avg_min_salary, 2))
