@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import uuid  # Added to assign unique IDs to dynamic rows
 from datetime import datetime
 import plotly.express as px
 
@@ -76,52 +77,56 @@ maintenance_loan = st.number_input(
 study_years = st.number_input("Number of Years of Study", value=4, step=1)
 
 # -------------------------
-# Dynamic Salary Timeline Inputs
+# Dynamic Salary Timeline Inputs (Working Perfectly)
 # -------------------------
 st.markdown("### Salary Timeline")
 st.markdown("""
-Enter the annual salary and the number of years at this salary.  
-**Examples:** Entry Level – £30,000 for 5 years, Mid Level – £40,000 for 10 years, Senior – £50,000 until retirement.  
+Enter your estimated annual salary (accounting for inflation) and the number of years at this salary.  
+**Examples:** Entry Level – £30,000 for 5 years, Mid Level – £50,000 for 10 years, Senior – £70,000 until retirement.  
 For the final row, enter **0** in "Years at this salary" to continue until the end of the simulation.
 """)
 
 if "salary_rows" not in st.session_state:
     st.session_state.salary_rows = [
-        {"salary": 30000.0, "years": 5},
-        {"salary": 40000.0, "years": 10},
-        {"salary": 60000.0, "years": 0}  # 0 means indefinite
+        {"id": str(uuid.uuid4()), "salary": 30000.0, "years": 5},
+        {"id": str(uuid.uuid4()), "salary": 50000.0, "years": 10},
+        {"id": str(uuid.uuid4()), "salary": 70000.0, "years": 0}  # 0 means indefinite
     ]
 
 def add_salary_row():
-    st.session_state.salary_rows.append({"salary": 0.0, "years": 0})
+    st.session_state.salary_rows.append({"id": str(uuid.uuid4()), "salary": 0.0, "years": 0})
+    st.experimental_rerun()
 
-def remove_salary_row(index):
-    if len(st.session_state.salary_rows) > 1:
-        st.session_state.salary_rows.pop(index)
+def remove_salary_row(row_id):
+    st.session_state.salary_rows = [row for row in st.session_state.salary_rows if row["id"] != row_id]
+    if len(st.session_state.salary_rows) == 0:
+        st.session_state.salary_rows.append({"id": str(uuid.uuid4()), "salary": 0.0, "years": 0})
+    st.experimental_rerun()
 
-for i, row in enumerate(st.session_state.salary_rows):
+for row in st.session_state.salary_rows:
     cols = st.columns([3, 3, 1])
     with cols[0]:
-        st.session_state.salary_rows[i]["salary"] = st.number_input(
-            label=f"Salary (£ per year) (Row {i+1})",
-            value=st.session_state.salary_rows[i]["salary"],
-            key=f"salary_{i}",
+        row["salary"] = st.number_input(
+            label=f"Salary (£ per year)",
+            value=row["salary"],
+            key=f"salary_{row['id']}",
             format="%.2f",
             step=1000.0  # Change salary in steps of 1,000
         )
     with cols[1]:
-        st.session_state.salary_rows[i]["years"] = st.number_input(
-            label=f"Years at this salary (Row {i+1})\n(Enter 0 for indefinite)",
-            value=int(st.session_state.salary_rows[i]["years"]),
-            key=f"years_{i}",
+        row["years"] = st.number_input(
+            label=f"Years at this salary\n(Enter 0 for indefinite)",
+            value=int(row["years"]),
+            key=f"years_{row['id']}",
             step=1,
             format="%d"
         )
     with cols[2]:
         st.markdown("<div class='remove-button-container'>", unsafe_allow_html=True)
-        st.button("Remove", key=f"remove_salary_{i}", on_click=remove_salary_row, args=(i,))
+        st.button("Remove", key=f"remove_salary_{row['id']}", on_click=remove_salary_row, args=(row["id"],))
         st.markdown("</div>", unsafe_allow_html=True)
 st.button("Add Salary Row", on_click=add_salary_row)
+
 salary_df = pd.DataFrame(st.session_state.salary_rows)
 
 # -------------------------
@@ -131,43 +136,49 @@ st.markdown("### Inflation Timeline")
 st.markdown("""
 Enter the estimated annual inflation rate and the number of years that rate applies.  
 For the final row, enter **0** in "Years" to continue until the end of the simulation.  
-Interest rates on student loans are usually tied to the retail price index (RPI) or the Bank of England base rate.
+**For loans taken out from 2023 (Plan 5):** Interest is charged at the Retail Price Index (RPI).  
+**For loans taken out before 2023 (Plan 2):** Interest is charged at RPI + 3%.  
+More details can be found on the [government website](https://www.gov.uk/repaying-your-student-loan/what-you-pay).
 """)
 
 if "inflation_rows" not in st.session_state:
     st.session_state.inflation_rows = [
-        {"inflation": 4.3, "years": 10},
-        {"inflation": 5, "years": 30}
+        {"id": str(uuid.uuid4()), "inflation": 4.3, "years": 10},
+        {"id": str(uuid.uuid4()), "inflation": 5, "years": 30}
     ]
 
 def add_inflation_row():
-    st.session_state.inflation_rows.append({"inflation": 0.0, "years": 0})
+    st.session_state.inflation_rows.append({"id": str(uuid.uuid4()), "inflation": 0.0, "years": 0})
+    # No experimental_rerun() to avoid lag
 
-def remove_inflation_row(index):
-    if len(st.session_state.inflation_rows) > 1:
-        st.session_state.inflation_rows.pop(index)
+def remove_inflation_row(row_id):
+    st.session_state.inflation_rows = [row for row in st.session_state.inflation_rows if row["id"] != row_id]
+    if len(st.session_state.inflation_rows) == 0:
+        st.session_state.inflation_rows.append({"id": str(uuid.uuid4()), "inflation": 0.0, "years": 0})
+    # No experimental_rerun() to avoid lag
 
-for i, row in enumerate(st.session_state.inflation_rows):
+for row in st.session_state.inflation_rows:
     cols = st.columns([3, 3, 1])
     with cols[0]:
-        st.session_state.inflation_rows[i]["inflation"] = st.number_input(
-            label=f"Inflation Rate % (Row {i+1})",
-            value=st.session_state.inflation_rows[i]["inflation"],
-            key=f"inflation_{i}"
+        row["inflation"] = st.number_input(
+            label=f"Inflation Rate % (Row)",
+            value=row["inflation"],
+            key=f"inflation_{row['id']}"
         )
     with cols[1]:
-        st.session_state.inflation_rows[i]["years"] = st.number_input(
-            label=f"Years (Row {i+1})\n(Enter 0 for indefinite)",
-            value=int(st.session_state.inflation_rows[i]["years"]),
-            key=f"inflation_years_{i}",
+        row["years"] = st.number_input(
+            label=f"Years\n(Enter 0 for indefinite)",
+            value=int(row["years"]),
+            key=f"inflation_years_{row['id']}",
             step=1,
             format="%d"
         )
     with cols[2]:
         st.markdown("<div class='remove-button-container'>", unsafe_allow_html=True)
-        st.button("Remove", key=f"remove_inflation_{i}", on_click=remove_inflation_row, args=(i,))
+        st.button("Remove", key=f"remove_inflation_{row['id']}", on_click=remove_inflation_row, args=(row["id"],))
         st.markdown("</div>", unsafe_allow_html=True)
 st.button("Add Inflation Row", on_click=add_inflation_row)
+
 inflation_df = pd.DataFrame(st.session_state.inflation_rows)
 
 # -------------------------
@@ -175,54 +186,67 @@ inflation_df = pd.DataFrame(st.session_state.inflation_rows)
 # -------------------------
 st.markdown("### Extra Repayments")
 st.markdown("""
-Enter the extra repayment amount you can contribute (per month), the start year (relative to your repayment start date), and the duration in years.  
-For the final row, enter **0** in "Duration (years)" to continue until the end of the simulation.
+Enter the extra repayment amount you can contribute (per month), the **start month** (relative to your repayment start) and the **duration in months**.  
+For the final row, enter **0** in "Duration in Months" to continue until the end of the simulation.
 """)
 
 if "extra_repayment_rows" not in st.session_state:
     st.session_state.extra_repayment_rows = [
-        {"extra_payment": 0.0, "start_year": 1, "duration": 0}
+        {"id": str(uuid.uuid4()), "extra_payment": 0.0, "start_month": 1, "duration_months": 0}
     ]
 
 def add_extra_row():
-    st.session_state.extra_repayment_rows.append({"extra_payment": 0.0, "start_year": 1, "duration": 0})
+    st.session_state.extra_repayment_rows.append({"id": str(uuid.uuid4()), "extra_payment": 0.0, "start_month": 1, "duration_months": 0})
+    # No experimental_rerun() to avoid lag
 
-def remove_extra_row(index):
-    if len(st.session_state.extra_repayment_rows) > 1:
-        st.session_state.extra_repayment_rows.pop(index)
+def remove_extra_row(row_id):
+    st.session_state.extra_repayment_rows = [row for row in st.session_state.extra_repayment_rows if row["id"] != row_id]
+    if len(st.session_state.extra_repayment_rows) == 0:
+        st.session_state.extra_repayment_rows.append({"id": str(uuid.uuid4()), "extra_payment": 0.0, "start_month": 1, "duration_months": 0})
+    # No experimental_rerun() to avoid lag
 
-for i, row in enumerate(st.session_state.extra_repayment_rows):
-    cols = st.columns([3, 3, 3, 1])
+for row in st.session_state.extra_repayment_rows:
+    cols = st.columns([3, 3, 3, 1.5])
     with cols[0]:
-        st.session_state.extra_repayment_rows[i]["extra_payment"] = st.number_input(
-            label=f"Extra Payment (£ per month) (Row {i+1})",
-            value=st.session_state.extra_repayment_rows[i]["extra_payment"],
-            key=f"extra_payment_{i}",
+        row["extra_payment"] = st.number_input(
+            label="Extra Payment\n(£ per month)",
+            value=row["extra_payment"],
+            key=f"extra_payment_{row['id']}",
             format="%.2f",
             step=50.0
         )
     with cols[1]:
-        st.session_state.extra_repayment_rows[i]["start_year"] = st.number_input(
-            label=f"Start Year (Row {i+1})\n(Relative to repayment start)",
-            value=st.session_state.extra_repayment_rows[i]["start_year"],
-            key=f"extra_start_year_{i}",
+        row["start_month"] = st.number_input(
+            label="Start Month\n(Relative to repayment start)",
+            value=row["start_month"],
+            key=f"extra_start_month_{row['id']}",
             step=1,
             format="%d"
         )
     with cols[2]:
-        st.session_state.extra_repayment_rows[i]["duration"] = st.number_input(
-            label=f"Duration in Years (Row {i+1})\n(Enter 0 for indefinite)",
-            value=st.session_state.extra_repayment_rows[i]["duration"],
-            key=f"extra_duration_{i}",
+        row["duration_months"] = st.number_input(
+            label="Duration in Months\n(Enter 0 for indefinite)",
+            value=row["duration_months"],
+            key=f"extra_duration_{row['id']}",
             step=1,
             format="%d"
         )
     with cols[3]:
         st.markdown("<div class='remove-button-container'>", unsafe_allow_html=True)
-        st.button("Remove", key=f"remove_extra_{i}", on_click=remove_extra_row, args=(i,))
+        st.button("Remove", key=f"remove_extra_{row['id']}", on_click=remove_extra_row, args=(row["id"],))
         st.markdown("</div>", unsafe_allow_html=True)
 st.button("Add Extra Repayment Row", on_click=add_extra_row)
+
 extra_df = pd.DataFrame(st.session_state.extra_repayment_rows)
+
+# -------------------------
+# Calculation Information (Moved Just Above the Run Button)
+# -------------------------
+st.markdown("#### Calculation Information")
+st.markdown("""
+- **Regular Repayment:** Calculated as 9% of your annual income above £25,000 (pre‑tax).  
+- **Extra Repayments:** Any extra repayment is applied directly to your outstanding loan balance, reducing future interest accrual and potentially shortening your repayment period.
+""")
 
 # -------------------------
 # Other Repayment Details & Constants
@@ -297,7 +321,6 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
         month_inflation_schedule.extend([last_inf] * extra_months)
     
     # Build month-by-month extra repayment schedule.
-    # Each extra repayment row applies extra payment from its specified start year for the given duration.
     extra_repayment_schedule = [0.0] * total_months
     if "extra_repayment_rows" in st.session_state:
         for row in st.session_state.extra_repayment_rows:
@@ -305,13 +328,14 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
                 extra_amount = float(row["extra_payment"])
             except Exception:
                 extra_amount = 0.0
-            start_year_offset = int(row["start_year"]) - 1  # Year 1 starts at month 0
-            duration_years = int(row["duration"])
-            if duration_years == 0:
-                months_active = total_months - start_year_offset
+            # Adjust for 0-based indexing: if user enters month 1, start at index 0.
+            start_month_offset = int(row["start_month"]) - 1  
+            duration = int(row["duration_months"])
+            if duration == 0:
+                months_active = total_months - start_month_offset
             else:
-                months_active = duration_years * 12
-            for m in range(start_year_offset, min(start_year_offset + months_active, total_months)):
+                months_active = duration
+            for m in range(start_month_offset, min(start_month_offset + months_active, total_months)):
                 extra_repayment_schedule[m] += extra_amount
     
     # -------------------------
@@ -418,7 +442,7 @@ def simulate_repayment(salary_df, inflation_df, starting_loan, total_years=40):
     return sim_df, bracket_details, loan_repaid_month
 
 # -------------------------
-# Run Simulation Button (original location)
+# Run Simulation Button
 # -------------------------
 if st.button("Run Simulation"):
     starting_loan = (tuition_loan + maintenance_loan) * study_years
@@ -443,10 +467,10 @@ if st.button("Run Simulation"):
         if loan_repaid_month:
             years = loan_repaid_month // 12
             rem_months = loan_repaid_month % 12
-            st.success(f"Loan fully repaid in {years} years, {rem_months} months.")
+            st.success(f"### Loan fully repaid in {years} years, {rem_months} months.")
         else:
-            st.error(f"Loan not fully repaid within 40 years. \nOutstanding Balance: £{sim_df['Loan Balance'].iloc[-1]:,.2f}")
-        
+            st.error(f"##### Loan not fully repaid within 40 years. \n ### Outstanding Balance: £{sim_df['Loan Balance'].iloc[-1]:,.2f}")
+       
         total_repaid = sim_df['Cumulative Paid'].iloc[-1]
         total_months = 40 * 12
         if loan_repaid_month is not None:
@@ -573,9 +597,10 @@ if st.button("Run Simulation"):
         st.dataframe(summary_df)
         
         # -------------------------
-        # Final Month-by-Month Repayment Details
+        # Final Month-by-Month Repayment Details (Rounded to 2dp)
         # -------------------------
         sim_df["Date"] = sim_df["Date"].apply(lambda x: x.date())
         final_df = sim_df.drop(columns=["Month", "Bracket"]).reset_index(drop=True)
+        final_df = final_df.round(2)
         st.markdown("#### Month-by-Month Repayment Details")
         st.dataframe(final_df)
