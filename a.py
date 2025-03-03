@@ -95,13 +95,11 @@ if "salary_rows" not in st.session_state:
 
 def add_salary_row():
     st.session_state.salary_rows.append({"id": str(uuid.uuid4()), "salary": 0.0, "years": 0})
-    st.experimental_rerun()
 
 def remove_salary_row(row_id):
     st.session_state.salary_rows = [row for row in st.session_state.salary_rows if row["id"] != row_id]
     if len(st.session_state.salary_rows) == 0:
         st.session_state.salary_rows.append({"id": str(uuid.uuid4()), "salary": 0.0, "years": 0})
-    st.experimental_rerun()
 
 for row in st.session_state.salary_rows:
     cols = st.columns([3, 3, 1])
